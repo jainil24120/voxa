@@ -1,0 +1,37 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-accent: #7c5cff;
+  --color-accent-2: #ff7ab6;
+}
+
+html, body, #root { height: 100%; }
+
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  background:
+    radial-gradient(1200px 600px at 10% -10%, rgba(124, 92, 255, 0.25), transparent 60%),
+    radial-gradient(900px 500px at 100% 0%, rgba(255, 122, 182, 0.15), transparent 60%),
+    #0b1020;
+}
+
+.karaoke-word {
+  display: inline-block;
+  margin-right: 0.35rem;
+  padding: 0.05rem 0.15rem;
+  border-radius: 0.35rem;
+  transition: color 120ms ease, background 200ms ease, transform 120ms ease;
+}
+.karaoke-word.active { color: #fff; background: rgba(124, 92, 255, 0.4); transform: translateY(-1px); }
+.karaoke-word.said { color: #b9f6c5; }
+.karaoke-word.missed { color: #ff8a8a; text-decoration: underline wavy #ff8a8a; }
+.karaoke-word.stress { font-weight: 700; }
+
+.glass {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(14px);
+  border-radius: 1rem;
+}
