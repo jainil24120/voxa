@@ -36,6 +36,13 @@ export const analyze = {
     api.post(`/analyze/gesture/${sessionId}`, payload).then((r) => r.data),
   feedback: (sessionId) =>
     api.post(`/analyze/feedback/${sessionId}`).then((r) => r.data),
+  transcribe: (blob) => {
+    const fd = new FormData();
+    fd.append('audio', blob, 'audio.webm');
+    return api
+      .post('/analyze/transcribe', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+      .then((r) => r.data);
+  },
 };
 
 export const tts = {
@@ -47,14 +54,20 @@ export const tts = {
 };
 
 export const mentor = {
-  upload: (file, label) => {
+  upload: (file, label, onProgress) => {
     const fd = new FormData();
     fd.append('clip', file);
     if (label) fd.append('label', label);
     return api
-      .post('/mentor/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+      .post('/mentor/upload', fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        onUploadProgress: (e) => onProgress?.(Math.round((e.loaded * 100) / (e.total || 1))),
+      })
       .then((r) => r.data);
   },
   list: () => api.get('/mentor').then((r) => r.data),
   get: (id) => api.get(`/mentor/${id}`).then((r) => r.data),
+  remove: (id) => api.delete(`/mentor/${id}`).then((r) => r.data),
+  saveGestures: (id, gestureProfile) =>
+    api.post(`/mentor/${id}/save-gestures`, { gestureProfile }).then((r) => r.data),
 };

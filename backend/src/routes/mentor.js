@@ -4,6 +4,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import MentorClip from '../models/MentorClip.js';
 import { requireAuth } from '../middleware/auth.js';
+import { processMentorClip } from '../services/mentorProcessor.js';
 
 const UPLOAD_DIR = process.env.UPLOAD_DIR || './uploads';
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -35,12 +36,10 @@ router.post('/upload', requireAuth, upload.single('clip'), async (req, res, next
       processingStatus: 'uploaded',
     });
 
-    // TODO: trigger background processor:
-    //  1. ffmpeg extract audio (if video) and frames (if video)
-    //  2. Whisper transcribe -> word timings
-    //  3. MediaPipe pose over frames -> keypoint timeline
-    //  4. Coqui XTTS-v2 voice clone reference
-    //  5. Update clip.voiceProfile, clip.gestureProfile, clip.processingStatus = 'ready'
+    // Fire-and-forget — frontend polls clip status while we transcribe + profile
+    processMentorClip(clip._id).catch((err) =>
+      console.error('[Voxa] mentor processor crashed:', err)
+    );
 
     res.json({ success: true, clip });
   } catch (err) {
@@ -50,7 +49,9 @@ router.post('/upload', requireAuth, upload.single('clip'), async (req, res, next
 
 router.get('/', requireAuth, async (req, res, next) => {
   try {
-    const clips = await MentorClip.find({ uploadedBy: req.user._id }).sort({ createdAt: -1 });
+    const clips = await MentorClip.find({ uploadedBy: req.user._id })
+      .sort({ createdAt: -1 })
+      .select('-gestureProfile.keypointTimeline'); // skip heavy timeline in list view
     res.json({ success: true, clips });
   } catch (err) {
     next(err);
@@ -62,6 +63,38 @@ router.get('/:id', requireAuth, async (req, res, next) => {
     const clip = await MentorClip.findOne({ _id: req.params.id, uploadedBy: req.user._id });
     if (!clip) return res.status(404).json({ success: false, error: 'Mentor clip not found' });
     res.json({ success: true, clip });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/:id/save-gestures', requireAuth, async (req, res, next) => {
+  try {
+    const clip = await MentorClip.findOne({ _id: req.params.id, uploadedBy: req.user._id });
+    if (!clip) return res.status(404).json({ success: false, error: 'Mentor clip not found' });
+
+    const { gestureProfile } = req.body;
+    if (gestureProfile) {
+      clip.gestureProfile = { ...clip.gestureProfile?.toObject?.(), ...gestureProfile };
+      await clip.save();
+    }
+    res.json({ success: true, clip });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.delete('/:id', requireAuth, async (req, res, next) => {
+  try {
+    const clip = await MentorClip.findOne({ _id: req.params.id, uploadedBy: req.user._id });
+    if (!clip) return res.status(404).json({ success: false, error: 'Mentor clip not found' });
+
+    const rel = clip.sourceUrl.replace(/^\/uploads\//, '');
+    const abs = path.join(UPLOAD_DIR, rel);
+    try { fs.unlinkSync(abs); } catch {}
+
+    await clip.deleteOne();
+    res.json({ success: true });
   } catch (err) {
     next(err);
   }

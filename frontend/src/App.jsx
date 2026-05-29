@@ -50,7 +50,10 @@ export default function App() {
           <Route path="/" element={<Landing />} />
           <Route path="/auth" element={<Auth />} />
           <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/practice/:topicId" element={<Practice />} />
+          <Route path="/practice/topic/:topicId" element={<Practice mode="topic" />} />
+          <Route path="/practice/mentor/:mentorId" element={<Practice mode="mentor" />} />
+          {/* Back-compat */}
+          <Route path="/practice/:topicId" element={<Practice mode="topic" />} />
           <Route path="/feedback/:sessionId" element={<Feedback />} />
           <Route path="/mentor" element={<MentorUpload />} />
           <Route path="/pricing" element={<Pricing />} />

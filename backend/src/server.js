@@ -2,6 +2,8 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import mongoose from 'mongoose';
+import path from 'node:path';
+import fs from 'node:fs';
 
 import authRouter from './routes/auth.js';
 import topicsRouter from './routes/topics.js';
@@ -13,8 +15,13 @@ import billingRouter from './routes/billing.js';
 
 const app = express();
 
-app.use(cors());
+const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || 'http://localhost:5173';
+app.use(cors({ origin: FRONTEND_ORIGIN, credentials: true }));
 app.use(express.json({ limit: '20mb' }));
+
+const UPLOAD_DIR = process.env.UPLOAD_DIR || './uploads';
+if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+app.use('/uploads', express.static(path.resolve(UPLOAD_DIR), { fallthrough: true }));
 
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true, service: 'voxa-backend', ts: new Date().toISOString() });
@@ -45,6 +52,7 @@ mongoose
     console.log('[Voxa] Mongo connected');
     app.listen(PORT, () => {
       console.log(`[Voxa] backend listening on http://localhost:${PORT}`);
+      console.log(`[Voxa] uploads served from ${path.resolve(UPLOAD_DIR)}`);
     });
   })
   .catch((err) => {
