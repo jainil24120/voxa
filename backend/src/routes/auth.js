@@ -5,6 +5,19 @@ import { signToken, requireAuth } from '../middleware/auth.js';
 
 const router = Router();
 
+function userPayload(u) {
+  return {
+    id: u._id,
+    name: u.name,
+    email: u.email,
+    freeSessionsUsed: u.freeSessionsUsed,
+    freeSessionLimit: u.freeSessionLimit,
+    subscription: u.subscription,
+    isAdmin: u.isAdmin(),
+    canStartSession: u.canStartSession(),
+  };
+}
+
 router.post('/signup', async (req, res, next) => {
   try {
     const { name, email, password } = req.body;
@@ -18,11 +31,7 @@ router.post('/signup', async (req, res, next) => {
     const user = await User.create({ name, email: email.toLowerCase(), passwordHash });
     const token = signToken(user._id);
 
-    res.json({
-      success: true,
-      token,
-      user: { id: user._id, name: user.name, email: user.email, canStartSession: user.canStartSession() },
-    });
+    res.json({ success: true, token, user: userPayload(user) });
   } catch (err) {
     next(err);
   }
@@ -38,30 +47,14 @@ router.post('/login', async (req, res, next) => {
     if (!ok) return res.status(401).json({ success: false, error: 'Invalid credentials' });
 
     const token = signToken(user._id);
-    res.json({
-      success: true,
-      token,
-      user: { id: user._id, name: user.name, email: user.email, canStartSession: user.canStartSession() },
-    });
+    res.json({ success: true, token, user: userPayload(user) });
   } catch (err) {
     next(err);
   }
 });
 
 router.get('/me', requireAuth, (req, res) => {
-  const u = req.user;
-  res.json({
-    success: true,
-    user: {
-      id: u._id,
-      name: u.name,
-      email: u.email,
-      freeSessionsUsed: u.freeSessionsUsed,
-      freeSessionLimit: u.freeSessionLimit,
-      subscription: u.subscription,
-      canStartSession: u.canStartSession(),
-    },
-  });
+  res.json({ success: true, user: userPayload(req.user) });
 });
 
 export default router;

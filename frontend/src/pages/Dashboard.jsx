@@ -24,7 +24,9 @@ export default function Dashboard() {
         <div>
           <h1 className="font-display text-4xl">Pick a topic</h1>
           <p className="text-white/60 mt-2">
-            {user?.subscription?.status === 'active'
+            {user?.isAdmin
+              ? 'Unlimited practice (admin) — go.'
+              : user?.subscription?.status === 'active'
               ? 'Unlimited practice — go.'
               : `Free sessions left: ${Math.max(0, (user?.freeSessionLimit || 1) - (user?.freeSessionsUsed || 0))}`}
           </p>
