@@ -4,13 +4,20 @@ const groq = process.env.GROQ_API_KEY
   ? new Groq({ apiKey: process.env.GROQ_API_KEY })
   : null;
 
-export async function generateCoachingTips({ targetText, transcript, voiceMetrics, gestureMetrics }) {
-  if (!groq) {
-    return fallbackTips({ voiceMetrics, gestureMetrics });
-  }
+export async function generateCoachingTips({
+  targetText,
+  transcript,
+  voiceMetrics,
+  gestureMetrics,
+  mentorProfile,
+}) {
+  if (!groq) return fallbackTips({ voiceMetrics, gestureMetrics });
 
-  const prompt = `
-You are an English communication coach. Analyse the user's delivery and give 3 short, actionable tips.
+  const mentorBlock = mentorProfile
+    ? `\nMentor target style (user is trying to mimic "${mentorProfile.label}"):\n${JSON.stringify(mentorProfile, null, 2)}`
+    : '';
+
+  const prompt = `You are an English communication coach. Analyse the user's delivery and give 3 short, actionable tips per category.
 
 Target text:
 "${targetText}"
@@ -23,6 +30,7 @@ ${JSON.stringify(voiceMetrics, null, 2)}
 
 Gesture metrics:
 ${JSON.stringify(gestureMetrics, null, 2)}
+${mentorBlock}
 
 Return JSON with this exact shape:
 {
@@ -32,8 +40,7 @@ Return JSON with this exact shape:
   "overallScore": 0-100
 }
 
-Tips must be specific (mention exact words or moments). Keep each tip under 20 words.
-`;
+Tips must be specific (mention exact words or moments). Keep each tip under 20 words. If a mentor profile is supplied, frame at least one voice tip and one gesture tip as "to sound/move more like {label}, do X".`;
 
   try {
     const completion = await groq.chat.completions.create({

@@ -1,8 +1,12 @@
 import { Router } from 'express';
+import multer from 'multer';
 import Session from '../models/Session.js';
 import { requireAuth } from '../middleware/auth.js';
 import { detectFillers, computeWpm, detectPauses } from '../services/fillerDetector.js';
 import { generateCoachingTips } from '../services/coachingTips.js';
+import { transcribeBuffer } from '../services/whisper.js';
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
 const router = Router();
 
@@ -36,6 +40,18 @@ router.post('/voice/:sessionId', requireAuth, async (req, res, next) => {
   }
 });
 
+// Server-side Whisper — for Firefox/Safari that lack Web Speech API.
+// Accepts multipart audio blob, returns transcript + word timings.
+router.post('/transcribe', requireAuth, upload.single('audio'), async (req, res, next) => {
+  try {
+    if (!req.file) return res.status(400).json({ success: false, error: 'No audio uploaded' });
+    const result = await transcribeBuffer(req.file.buffer, req.file.originalname || 'audio.webm');
+    res.json({ success: true, ...result });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.post('/gesture/:sessionId', requireAuth, async (req, res, next) => {
   try {
     const { keypointFrames, durationSec } = req.body;
@@ -53,16 +69,27 @@ router.post('/gesture/:sessionId', requireAuth, async (req, res, next) => {
 
 router.post('/feedback/:sessionId', requireAuth, async (req, res, next) => {
   try {
-    const session = await Session.findOne({ _id: req.params.sessionId, userId: req.user._id }).populate(
-      'topicId'
-    );
+    const session = await Session.findOne({ _id: req.params.sessionId, userId: req.user._id })
+      .populate('topicId')
+      .populate('mentorClipId');
     if (!session) return res.status(404).json({ success: false, error: 'Session not found' });
 
+    const targetText =
+      session.topicId?.text ||
+      session.mentorClipId?.transcript ||
+      '';
+
     const tips = await generateCoachingTips({
-      targetText: session.topicId?.text || '',
+      targetText,
       transcript: session.transcript,
       voiceMetrics: session.voiceMetrics,
       gestureMetrics: session.gestureMetrics,
+      mentorProfile: session.mentorClipId
+        ? {
+            avgWpm: session.mentorClipId.voiceProfile?.avgWpm,
+            label: session.mentorClipId.label,
+          }
+        : null,
     });
 
     session.feedback = tips;

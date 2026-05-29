@@ -21,7 +21,19 @@ const userSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+function adminEmails() {
+  return (process.env.ADMIN_EMAILS || '')
+    .split(',')
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+userSchema.methods.isAdmin = function () {
+  return adminEmails().includes((this.email || '').toLowerCase());
+};
+
 userSchema.methods.canStartSession = function () {
+  if (this.isAdmin()) return true;
   if (this.subscription.status === 'active') return true;
   return this.freeSessionsUsed < this.freeSessionLimit;
 };

@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { topics, sessions, analyze, tts } from '../api.js';
+import { topics, mentor as mentorApi, sessions, analyze, tts } from '../api.js';
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition.js';
 import { useAudioRecorder } from '../hooks/useAudioRecorder.js';
 import { usePoseTracker } from '../hooks/usePoseTracker.js';
 
-export default function Practice() {
-  const { topicId } = useParams();
+export default function Practice({ mode = 'topic' }) {
+  const params = useParams();
   const navigate = useNavigate();
-  const [topic, setTopic] = useState(null);
+
+  const [target, setTarget] = useState(null); // either topic or mentor clip, normalised
   const [session, setSession] = useState(null);
   const [coachAudioUrl, setCoachAudioUrl] = useState(null);
   const [submitting, setSubmitting] = useState(false);
@@ -23,18 +24,66 @@ export default function Practice() {
   const pose = usePoseTracker(videoRef, canvasRef, { enabled: !!session });
 
   useEffect(() => {
-    topics.get(topicId).then((r) => setTopic(r.topic)).catch((e) => setError(e.message));
-  }, [topicId]);
+    if (mode === 'mentor') {
+      const id = params.mentorId;
+      mentorApi.get(id)
+        .then((r) => {
+          if (r.clip.processingStatus !== 'ready') {
+            setError(
+              r.clip.processingStatus === 'processing'
+                ? 'Mentor clip is still processing — try again in a few seconds.'
+                : `Mentor clip not ready (status: ${r.clip.processingStatus}). ${r.clip.processingError || ''}`
+            );
+            return;
+          }
+          setTarget({
+            kind: 'mentor',
+            id: r.clip._id,
+            title: r.clip.label,
+            category: 'mentor',
+            level: 'custom',
+            text: r.clip.transcript,
+            targetStyle: {
+              wpmMin: Math.max(80, (r.clip.voiceProfile?.avgWpm || 130) - 15),
+              wpmMax: (r.clip.voiceProfile?.avgWpm || 130) + 15,
+              tone: 'mentor-style',
+              stressWords: [],
+            },
+            mentorAudioUrl: r.clip.sourceUrl,
+            mentorMediaType: r.clip.mediaType,
+            mentorAvgWpm: r.clip.voiceProfile?.avgWpm,
+          });
+        })
+        .catch((e) => setError(e.response?.data?.error || e.message));
+    } else {
+      const id = params.topicId;
+      topics.get(id)
+        .then((r) => {
+          setTarget({
+            kind: 'topic',
+            id: r.topic._id,
+            title: r.topic.title,
+            category: r.topic.category,
+            level: r.topic.level,
+            text: r.topic.text,
+            targetStyle: r.topic.targetStyle,
+          });
+        })
+        .catch((e) => setError(e.response?.data?.error || e.message));
+    }
+  }, [mode, params.topicId, params.mentorId]);
 
   const targetWords = useMemo(() => {
-    if (!topic?.text) return [];
-    return topic.text.split(/\s+/).map((w, i) => ({
+    if (!target?.text) return [];
+    return target.text.split(/\s+/).map((w, i) => ({
       raw: w,
       key: i,
       norm: w.toLowerCase().replace(/[^a-z']/g, ''),
-      isStress: topic.targetStyle?.stressWords?.some((s) => w.toLowerCase().includes(s.toLowerCase())),
+      isStress: target.targetStyle?.stressWords?.some((s) =>
+        w.toLowerCase().includes(s.toLowerCase())
+      ),
     }));
-  }, [topic]);
+  }, [target]);
 
   const matchIndex = useMemo(() => {
     if (!speech.wordTimings.length) return -1;
@@ -50,7 +99,11 @@ export default function Practice() {
   async function startPractice() {
     setError('');
     try {
-      const res = await sessions.start({ topicId });
+      const payload =
+        target.kind === 'mentor'
+          ? { mentorClipId: target.id }
+          : { topicId: target.id };
+      const res = await sessions.start(payload);
       setSession(res.session);
       startTsRef.current = performance.now();
       await audio.start();
@@ -65,8 +118,12 @@ export default function Practice() {
   }
 
   async function playCoachVoice() {
-    if (!topic) return;
-    const url = await tts.synthesize(topic.text);
+    if (!target) return;
+    if (target.kind === 'mentor' && target.mentorAudioUrl) {
+      setCoachAudioUrl(target.mentorAudioUrl);
+      return;
+    }
+    const url = await tts.synthesize(target.text);
     setCoachAudioUrl(url);
   }
 
@@ -76,11 +133,25 @@ export default function Practice() {
     setSubmitting(true);
     try {
       const durationSec = (performance.now() - startTsRef.current) / 1000;
+      let transcript = speech.transcript;
+      let wordTimings = speech.wordTimings;
+
+      // If browser had no SpeechRecognition (Firefox/Safari), fall back to server Whisper.
+      if (!speech.supported && audio.audioBlob) {
+        const stt = await analyze.transcribe(audio.audioBlob);
+        transcript = stt.transcript;
+        wordTimings = stt.wordTimings;
+      }
 
       await analyze.voice(session._id, {
-        transcript: speech.transcript,
-        wordTimings: speech.wordTimings,
-        audioStats: { avgVolumeDb: audio.stats.avgVolumeDb, avgPitchHz: 0, pitchVariance: 0, clarityScore: 0 },
+        transcript,
+        wordTimings,
+        audioStats: {
+          avgVolumeDb: audio.stats.avgVolumeDb,
+          avgPitchHz: 0,
+          pitchVariance: 0,
+          clarityScore: 0,
+        },
       });
 
       await analyze.gesture(session._id, {
@@ -97,22 +168,26 @@ export default function Practice() {
     }
   }
 
-  if (error) return <div className="p-8 text-red-300">{error}</div>;
-  if (!topic) return <div className="p-8 text-white/60">Loading…</div>;
+  if (error) return <div className="p-8 text-red-300 max-w-3xl mx-auto">{error}</div>;
+  if (!target) return <div className="p-8 text-white/60">Loading…</div>;
 
   return (
     <div className="px-6 py-8 max-w-6xl mx-auto">
       <div className="flex items-start justify-between gap-4 mb-6">
         <div>
-          <div className="text-xs uppercase tracking-wider text-accent">{topic.category} · {topic.level}</div>
-          <h1 className="font-display text-3xl mt-1">{topic.title}</h1>
+          <div className="text-xs uppercase tracking-wider text-accent">
+            {target.category} · {target.level}
+            {target.kind === 'mentor' && ' · mentor clone'}
+          </div>
+          <h1 className="font-display text-3xl mt-1">{target.title}</h1>
           <div className="text-white/50 text-sm mt-1">
-            Target pace: {topic.targetStyle?.wpmMin}-{topic.targetStyle?.wpmMax} WPM · Tone: {topic.targetStyle?.tone}
+            Target pace: {target.targetStyle?.wpmMin}-{target.targetStyle?.wpmMax} WPM
+            {target.mentorAvgWpm ? ` · Mentor avg: ${target.mentorAvgWpm} WPM` : ''}
           </div>
         </div>
         <div className="flex gap-2">
           <button onClick={playCoachVoice} className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-sm">
-            ▶ Hear ideal version
+            ▶ {target.kind === 'mentor' ? 'Hear mentor' : 'Hear ideal version'}
           </button>
           {!session ? (
             <button onClick={startPractice} className="px-4 py-2 rounded-lg bg-accent hover:bg-accent/90 font-semibold">
@@ -131,7 +206,11 @@ export default function Practice() {
       </div>
 
       {coachAudioUrl && (
-        <audio src={coachAudioUrl} controls autoPlay className="w-full mb-4" />
+        target.kind === 'mentor' && target.mentorMediaType === 'video' ? (
+          <video src={coachAudioUrl} controls autoPlay className="w-full max-h-64 mb-4 rounded-lg" />
+        ) : (
+          <audio src={coachAudioUrl} controls autoPlay className="w-full mb-4" />
+        )
       )}
 
       <div className="grid lg:grid-cols-3 gap-5">
@@ -168,7 +247,7 @@ export default function Practice() {
             <div className="text-xs uppercase tracking-wider text-white/50 mb-2">Live stats</div>
             <ul className="space-y-1.5 text-white/80">
               <li>Mic: {audio.recording ? '● recording' : 'idle'}</li>
-              <li>Speech: {speech.listening ? '● listening' : 'idle'}{!speech.supported && ' (use Chrome/Edge)'}</li>
+              <li>Speech: {speech.listening ? '● listening' : 'idle'}{!speech.supported && ' (server Whisper on finish)'}</li>
               <li>Words said: {speech.wordTimings.length}</li>
               <li>Pose frames: {pose.frames.length}</li>
               <li>Avg volume: {audio.stats.avgVolumeDb} dB</li>
