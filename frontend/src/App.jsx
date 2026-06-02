@@ -1,5 +1,6 @@
-import { Routes, Route, Link, useNavigate } from 'react-router-dom';
+import { Routes, Route, Link, useNavigate, useLocation } from 'react-router-dom';
 import Landing from './pages/Landing.jsx';
+import SmokeLanding from './pages/SmokeLanding.jsx';
 import Auth from './pages/Auth.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Practice from './pages/Practice.jsx';
@@ -9,12 +10,17 @@ import Pricing from './pages/Pricing.jsx';
 
 export default function App() {
   const navigate = useNavigate();
+  const location = useLocation();
   const token = localStorage.getItem('voxa_token');
+
+  // The smoke-test landing (/) is the public validation page — show a minimal,
+  // distraction-free header (logo only), no links into the half-built app.
+  const isSmoke = location.pathname === '/';
 
   function logout() {
     localStorage.removeItem('voxa_token');
     localStorage.removeItem('voxa_user');
-    navigate('/');
+    navigate('/app');
   }
 
   return (
@@ -24,6 +30,9 @@ export default function App() {
           <span className="text-white">Vox</span>
           <span className="text-accent">a</span>
         </Link>
+        {isSmoke ? (
+          <span className="text-xs text-white/40 uppercase tracking-wider">Early access</span>
+        ) : (
         <nav className="flex gap-4 items-center text-sm text-white/70">
           {token ? (
             <>
@@ -43,11 +52,13 @@ export default function App() {
             </>
           )}
         </nav>
+        )}
       </header>
 
       <main className="flex-1">
         <Routes>
-          <Route path="/" element={<Landing />} />
+          <Route path="/" element={<SmokeLanding />} />
+          <Route path="/app" element={<Landing />} />
           <Route path="/auth" element={<Auth />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/practice/topic/:topicId" element={<Practice mode="topic" />} />

@@ -12,6 +12,7 @@ import analyzeRouter from './routes/analyze.js';
 import ttsRouter from './routes/tts.js';
 import mentorRouter from './routes/mentor.js';
 import billingRouter from './routes/billing.js';
+import waitlistRouter from './routes/waitlist.js';
 
 const app = express();
 
@@ -34,6 +35,7 @@ app.use('/api/analyze', analyzeRouter);
 app.use('/api/tts', ttsRouter);
 app.use('/api/mentor', mentorRouter);
 app.use('/api/billing', billingRouter);
+app.use('/api/waitlist', waitlistRouter);
 
 app.use((err, _req, res, _next) => {
   console.error('[Voxa] error:', err);

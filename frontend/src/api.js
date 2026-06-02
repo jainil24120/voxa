@@ -53,6 +53,12 @@ export const tts = {
       .then((r) => URL.createObjectURL(r.data)),
 };
 
+export const waitlist = {
+  join: (data) => api.post('/waitlist', data).then((r) => r.data),
+  event: (type, extra = {}) =>
+    api.post('/waitlist/event', { type, ...extra }).then((r) => r.data).catch(() => null),
+};
+
 export const mentor = {
   upload: (file, label, onProgress) => {
     const fd = new FormData();
